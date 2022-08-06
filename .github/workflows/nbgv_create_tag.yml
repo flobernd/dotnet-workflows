@@ -1,0 +1,32 @@
+# Creates a git tag based on the NBGV version of the current ref.
+
+name: Create Tag
+
+on: 
+  workflow_call:
+
+jobs:
+  main:
+    name: Create Tag
+    runs-on: ubuntu-latest
+    steps:
+
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Detect Version
+        uses: dotnet/nbgv@master
+        id: nbgv
+
+      - name: Create Tag
+        uses: actions/github-script@v6
+        with:
+          script: |
+            github.rest.git.createRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: 'refs/tags/v${{ steps.nbgv.outputs.SimpleVersion }}',
+              sha: context.sha
+            })

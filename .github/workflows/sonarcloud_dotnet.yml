@@ -1,0 +1,197 @@
+# Builds a specified set of project files and performs a SonarCloud code analysis. 
+# Optionally imports test-results and includes them in the report.
+
+name: SonarCloud Analysis
+
+on:
+  workflow_call:
+    inputs:
+      dotnet_version:
+        description: The .NET versions required to build the projects. Supports multi line strings.
+        required: false
+        type: string
+        default: 6.0.x
+
+      sonar_organization:
+        description: The SonarCloud organization name.
+        required: true
+        type: string
+      sonar_project_key:
+        description: The SonarCloud project key.
+        required: true
+        type: string
+      sonar_arguments:
+        description: Optional arguments to be passed to the 'sonarscanner' tool.
+        required: false
+        type: string
+
+      solution:
+        description: The Visual Studio solution for which the analysis should be run.
+        required: false
+        type: string
+      project_filter:
+        description: A list of glob patterns used for filtering the projects. Use '!' to negate.
+        required: false
+        type: string
+      configuration:
+        description: The build configuration to use when building the projects.
+        required: false
+        type: string
+        default: Debug
+      build_args:
+        description: Extra arguments to be passed to the .NET CLI when building the projects.
+        required: false
+        type: string
+
+      test_results_artifact:
+        description: The name of the 'test-results' artifact to import.
+        required: false
+        type: string
+      test_results_artifact_workflow:
+        description: The name of the workflow that generated the 'test-results' artifact.
+        required: false
+        type: string
+
+      use_nuget_cache:
+        description: Specifies whether to globally cache NuGet packages.
+        required: false
+        type: boolean
+        default: false
+      nuget_cache_key:
+        description: A pattern of files to include in the NuGet cache key hash. For example '**/packages.lock.json' or '**/*.csproj'.
+        required: false
+        type: string
+        default: '**/packages.lock.json'
+      
+    secrets:
+      SONAR_TOKEN:
+        required: true
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_GENERATE_ASPNET_CERTIFICATE: false
+
+jobs:
+  main:
+    name: Analyze
+    
+    runs-on: ubuntu-latest
+
+    env:
+      SOLUTION: ${{ inputs.project_filter != '' && format('Solution.{0}.slnf', github.run_id) || inputs.solution }}
+
+    steps:
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Prepare Scripts
+        run: |
+          git clone https://github.com/flobernd/workflows.git ../workflows
+          pip install -r ../workflows/scripts/requirements.txt
+
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v2
+        with:
+          dotnet-version: ${{ inputs.dotnet_version }}
+
+      - name: Set up JDK 11
+        uses: actions/setup-java@v1
+        with:
+          java-version: 1.11
+
+      - name: Cache SonarCloud Packages
+        uses: actions/cache@v3
+        with:
+          path: ~/.sonar/cache
+          key: ${{ runner.os }}-sonar
+          restore-keys: ${{ runner.os }}-sonar
+
+      - name: Cache SonarCloud Scanner
+        id: cache-sonar-scanner
+        uses: actions/cache@v3
+        with:
+          path: ./.sonar/scanner
+          key: ${{ runner.os }}-sonar-scanner
+          restore-keys: ${{ runner.os }}-sonar-scanner
+
+      - name: Install SonarCloud Scanner
+        if: steps.cache-sonar-scanner.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ./.sonar/scanner
+          dotnet tool update dotnet-sonarscanner --tool-path ./.sonar/scanner
+
+      - name: SonarCloud Begin Analysis
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: >
+          ./.sonar/scanner/dotnet-sonarscanner begin
+          /k:"${{ inputs.sonar_project_key }}"
+          /o:"${{ inputs.sonar_organization }}"
+          /d:sonar.login="${{ secrets.SONAR_TOKEN }}"
+          /d:sonar.host.url="https://sonarcloud.io"
+          /d:sonar.cs.opencover.reportsPaths="**/TestResults/**/coverage.opencover.xml"
+          /d:sonar.cs.vstest.reportsPaths="**/TestResults/*.trx"
+          ${{ inputs.sonar_arguments }}
+
+      - name: Cache NuGet Packages
+        if: inputs.use_nuget_cache == true
+        uses: actions/cache@v3
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles(inputs.nuget_cache_key) }}
+          restore-keys: ${{ runner.os }}-nuget-
+
+      - name: Generate Solution Filter
+        if: inputs.project_filter != ''
+        run: >
+          python ../workflows/scripts/solution_filter.py
+          --pattern "${{ inputs.project_filter }}"
+          --output "${{ env.SOLUTION }}"
+          "${{ inputs.solution }}"
+
+      - name: .NET Restore
+        run: >
+          dotnet restore
+          "${{ env.SOLUTION }}"
+
+      - name: .NET Build
+        run: >
+          dotnet build
+          "${{ env.SOLUTION }}"
+          --no-restore
+          ${{ inputs.configuration != '' && format('--configuration "{0}"', inputs.configuration) || '' }}
+          ${{ inputs.build_args != '' && inputs.build_args || '' }}
+
+      - name: Import Test Results
+        if: inputs.test_results_artifact != '' && inputs.test_results_artifact_workflow == ''
+        uses: actions/download-artifact@v3
+        with:
+          name: ${{ inputs.test_results_artifact }}
+          path: ./TestResults
+
+      - name: Import Test Results
+        if: inputs.test_results_artifact != '' && inputs.test_results_artifact_workflow != ''
+        uses: dawidd6/action-download-artifact@master
+        with:
+          workflow_conclusion: completed
+          workflow: ${{ inputs.test_results_artifact_workflow }}
+          name: ${{ inputs.test_results_artifact }}
+          path: ./TestResults
+
+      - name: SonarCloud End Analysis
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: ./.sonar/scanner/dotnet-sonarscanner end /d:sonar.login="${{ secrets.SONAR_TOKEN }}"

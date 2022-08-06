@@ -1,0 +1,53 @@
+# Searches for a Visual Studio Solution file.
+
+name: Find Solution
+
+on: 
+  workflow_call:
+    inputs:
+      directory:
+        description: The directory in which a Visual Studio Solution file is to be searched for.
+        type: string
+        required: false
+
+    outputs:
+      solution:
+        description: The Visual Studio Solution file or an emtpy string.
+        value: ${{ jobs.main.outputs.solution }}
+
+jobs:
+  main:
+    name: Find Solution
+    runs-on: ubuntu-latest
+    outputs:
+      solution: ${{ steps.find.outputs.solution }}
+    steps:
+
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Find Solution
+        id: find
+        run: |
+          bash << 'EOF'
+          ${{ inputs.directory != '' && format('cd "{0}"', inputs.directory) || '' }}
+          shopt -s nullglob
+          solutions=(*.sln)
+          if [[ ${#solutions[@]} == 0 ]]
+          then
+              echo "No Visual Studio solution file found in the current directory"
+              exit 1
+          fi
+          if [[ ${#solutions[@]} > 1 ]]
+          then
+              echo "Multiple Visual Studio solution files found in the current directory"
+              exit 1
+          fi
+          echo "::set-output name=solution::${{ inputs.directory != '' && format('{0}/', inputs.directory) || '' }}${solutions[0]}"
+          EOF
+
+      - name: Print Solution Name
+        env:
+          SOLUTION: ${{ steps.find.outputs.solution }}
+        run: >
+          echo "Using solution '${{ env.SOLUTION }}'"

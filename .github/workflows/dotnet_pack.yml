@@ -1,0 +1,116 @@
+# Builds a specified set of project files and creates an artifact with the resulting NuGet packages.
+
+name: .NET CLI
+
+on:
+  workflow_call:
+    inputs:
+      solution:
+        description: The Visual Studio solution for which the packages should be build.
+        required: false
+        type: string
+      project_filter:
+        description: A list of glob patterns used for filtering the projects. Use '!' to negate.
+        required: false
+        type: string
+      configuration:
+        description: The build configuration to use when building the projects.
+        required: false
+        type: string
+        default: Release
+      build_args:
+        description: Extra arguments to be passed to the .NET CLI when building the projects.
+        required: false
+        type: string
+
+      use_nuget_cache:
+        description: Specifies whether to globally cache NuGet packages.
+        required: false
+        type: boolean
+        default: false
+      nuget_cache_key:
+        description: A pattern of files to include in the NuGet cache key hash. For example '**/packages.lock.json' or '**/*.csproj'.
+        required: false
+        type: string
+        default: '**/packages.lock.json'
+
+      artifact:
+        description: The name of the output 'nupkg' artifact.
+        required: true
+        type: string
+        default: nupkg
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_GENERATE_ASPNET_CERTIFICATE: false
+
+jobs:
+  main:
+    name: Pack
+    
+    runs-on: ubuntu-latest
+
+    env:
+      SOLUTION: ${{ inputs.project_filter != '' && format('Solution.{0}.slnf', github.run_id) || inputs.solution }}
+    
+    steps:
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Prepare Scripts
+        run: |
+          git clone https://github.com/flobernd/workflows.git ../workflows
+          pip install -r ../workflows/scripts/requirements.txt
+
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v2
+        with:
+          dotnet-version: 6.0.x
+
+      - name: Cache NuGet Packages
+        if: inputs.use_nuget_cache == true
+        uses: actions/cache@v3
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles(inputs.nuget_cache_key) }}
+          restore-keys: ${{ runner.os }}-nuget-
+
+      - name: Generate Solution Filter
+        if: inputs.project_filter != ''
+        run: >
+          python ../workflows/scripts/solution_filter.py
+          --pattern "${{ inputs.project_filter }}"
+          --output "${{ env.SOLUTION }}"
+          "${{ inputs.solution }}"
+
+      - name: .NET Restore
+        run: >
+          dotnet restore
+          "${{ env.SOLUTION }}"
+
+      - name: .NET Pack
+        run: >
+          dotnet pack
+          "${{ env.SOLUTION }}"
+          --no-restore
+          --output ./nupkg
+          ${{ inputs.configuration != '' && format('--configuration "{0}"', inputs.configuration) || '' }}
+          ${{ inputs.build_args != '' && inputs.build_args || '' }}
+          -p:ContinuousIntegrationBuild=true
+
+      - name: Archive NuGet Artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ inputs.artifact }}
+          path: ./nupkg

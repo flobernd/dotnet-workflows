@@ -1,0 +1,217 @@
+# Builds and executes a specified set of test projects and optionally creates a 'test results' artifact. 
+# After the run, a report is generated and the lines of code with errors are annotated.
+
+name: .NET CLI
+
+on:
+  workflow_call:
+    inputs:
+      runs_on:
+        description: The machine(s) on which the job is to be executed. Supports multi line strings.
+        required: true
+        type: string
+
+      dotnet_version:
+        description: The .NET versions required to run the tests. Supports multi line strings.
+        required: false
+        type: string
+        default: 6.0.x
+
+      solution:
+        description: The Visual Studio solution for which the tests should be run.
+        required: true
+        type: string
+      project_filter:
+        description: A list of glob patterns used for filtering the projects. Use '!' to negate.
+        required: false
+        type: string
+      configuration:
+        description: The build configuration to use when building the projects.
+        required: false
+        type: string
+        default: Debug
+      build_args:
+        description: Extra arguments to be passed to the .NET CLI when building the projects.
+        required: false
+        type: string
+
+      test_prepare_command:
+        description: An optional command to be run right before the first test gets executed.
+        required: false
+        type: string
+      test_cleanup_command:
+        description: An optional command to be run right after the last test got executed.
+        required: false
+        type: string
+      test_filter:
+        description: An optional filter expression to be passed to 'dotnet test'.
+        required: false
+        type: string
+      fail_fast:
+        description: Immediately stop testing when a single test run failed.
+        required: false
+        type: boolean
+      maxdop:
+        description: The maximum number of test projects to run in parallel.
+        required: false
+        type: number
+        default: 0
+
+      use_nuget_cache:
+        description: Specifies whether to globally cache NuGet packages.
+        required: false
+        type: boolean
+        default: false
+      nuget_cache_key:
+        description: A pattern of files to include in the NuGet cache key hash. For example '**/packages.lock.json' or '**/*.csproj'.
+        required: false
+        type: string
+        default: '**/packages.lock.json'
+
+      archive:
+        description: "Specifies whether a 'test-results' artifact should be created. Accepted values: 'never', 'always', 'on_success', 'on_failure'."
+        required: false
+        type: string
+        default: never
+      artifact:
+        description: The name of the output 'test-results' artifact.
+        required: false
+        type: string
+        default: test-results  
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_GENERATE_ASPNET_CERTIFICATE: false
+
+jobs:
+  generate_matrix:
+    name: Generate Job Matrix
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.generate.outputs.matrix }}
+    env:
+      MATRIX_INPUT: ${{ inputs.runs_on }}
+    steps:
+      - name: Generate Job Matrix
+        id: generate
+        run: |
+          MATRIX_OUTPUT=$(node -e "console.log(JSON.stringify(process.env.MATRIX_INPUT.split(/\r?\n/).map(x => x.trim()).filter(x => x)));")
+          echo "::set-output name=matrix::$MATRIX_OUTPUT"
+
+  main:
+    name: Run Tests
+    needs: generate_matrix
+
+    strategy:
+      fail-fast: false
+      matrix: 
+        os: ${{ fromJSON(needs.generate_matrix.outputs.matrix) }}
+
+    runs-on: ${{ matrix.os }}
+
+    env:
+      SOLUTION: ${{ inputs.project_filter != '' && format('Solution.{0}.slnf', github.run_id) || inputs.solution }}
+
+    steps:
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Prepare Scripts
+        run: |
+          git clone https://github.com/flobernd/workflows.git ../workflows
+          pip install -r ../workflows/scripts/requirements.txt
+
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v2
+        with:
+          dotnet-version: ${{ inputs.dotnet_version }}
+
+      - name: Cache NuGet Packages
+        if: inputs.use_nuget_cache == true
+        uses: actions/cache@v3
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles(inputs.nuget_cache_key) }}
+          restore-keys: ${{ runner.os }}-nuget-
+
+      - name: Generate Solution Filter
+        if: inputs.project_filter != ''
+        run: >
+          python ../workflows/scripts/solution_filter.py
+          --pattern '${{ inputs.project_filter }}'
+          --output "${{ env.SOLUTION }}"
+          "${{ inputs.solution }}"
+
+      - name: .NET Restore
+        run: >
+          dotnet restore
+          "${{ env.SOLUTION }}"
+
+      - name: .NET Build
+        run: >
+          dotnet build
+          "${{ env.SOLUTION }}"
+          --no-restore
+          ${{ inputs.configuration != '' && format('--configuration "{0}"', inputs.configuration) || '' }}
+          ${{ inputs.build_args != '' && inputs.build_args || '' }}
+          -p:ContinuousIntegrationBuild=true
+
+      - name: Run Prepare Command
+        if: inputs.test_prepare_command != ''
+        run: ${{ inputs.test_prepare_command }}
+
+      - name: .NET Test
+        id: test
+        run: >
+          python ../workflows/scripts/glob_exec.py
+          --pattern "${{ inputs.project_filter != '' && inputs.project_filter || '**/*.csproj' }}"
+          ${{ inputs.fail_fast != '' && '--fail-fast' || '' }}
+          --ignore-errors
+          --maxdop=${{ inputs.maxdop }}
+          dotnet test
+          "{}"
+          --no-build
+          ${{ inputs.test_filter != '' && format('--filter "{0}"', inputs.test_filter) || '' }}
+          --logger:"trx;LogFilePrefix=results_${{ runner.os }}"
+          --collect:"XPlat Code Coverage"
+          -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=opencover
+
+      - name: Run Cleanup Command
+        if: always() && inputs.test_cleanup_command != ''
+        continue-on-error: true
+        run: ${{ inputs.test_cleanup_command }}
+
+      - name: Generate Test Report
+        uses: dorny/test-reporter@v1
+        with:
+          name: Test Results (${{ matrix.os }})
+          path: '**/TestResults/*.trx'
+          reporter: dotnet-trx
+          fail-on-error: true
+          only-summary: true
+          max-annotations: 50
+
+      - name: Archive Test Results
+        if: > 
+          (success() || failure()) && 
+          (
+          ((inputs.archive == 'always' || inputs.archive == 'on_success') && steps.test.outcome == 'success') || 
+          ((inputs.archive == 'always' || inputs.archive == 'on_failure') && steps.test.outcome == 'failure')
+          )
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ inputs.artifact }}
+          path: | 
+            **/TestResults/*.trx
+            **/TestResults/*/coverage.opencover.xml
