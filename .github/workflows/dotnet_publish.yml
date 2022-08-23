@@ -5,6 +5,17 @@ name: .NET CLI
 on:
   workflow_call:
     inputs:
+      fetch_depth:
+        description: Number of commits to fetch. 0 indicates all history for all branches and tags.
+        required: false
+        type: number
+        default: 1
+      submodules:
+        description: 'Whether to checkout submodules: `true` to checkout submodules or `recursive` to recursively checkout submodules.'
+        required: false
+        type: string
+        default: false
+
       solution:
         description: The Visual Studio solution for which the packages should be build.
         required: false
@@ -70,8 +81,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
         with:
-          fetch-depth: 0
-          submodules: recursive
+          fetch-depth: ${{ inputs.fetch_depth }}
+          submodules: ${{ inputs.submodules }}
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v2
