@@ -1,0 +1,27 @@
+name: Create Tag
+author: Florian Bernd
+description: Creates a tag for the given commit hash.
+
+inputs:
+  name:
+    description: The tag name.
+    required: true
+    type: string
+  sha:
+    description: The commit hash to create a tag for.
+    required: true
+    type: string
+
+runs:
+  using: composite
+  steps:
+    - name: Create Tag
+      uses: actions/github-script@v6
+      with:
+        script: |
+          github.rest.git.createRef({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            ref: 'refs/tags/${{ inputs.name }}',
+            sha: ${{ inputs.sha }}
+          })

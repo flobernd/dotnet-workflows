@@ -1,0 +1,46 @@
+name: Download Artifact
+author: Florian Bernd
+description: Downloads an artifact from a previous job in the same workflow or from a completed foreign workflow.
+
+inputs:
+  shell:
+    description: The default shell to use for this composite action.
+    type: string
+    required: false
+    default: bash
+  artifact:
+    description: The name of the artifact to download.
+    type: string
+    required: true
+  path:
+    description: The artifact output path.
+    type: string
+    required: true
+  workflow:
+    description: The name of the workflow to download the artifact from.
+    type: string
+    required: false
+  workflow-conclusion:
+    description: tbd
+    type: string
+    required: false
+    default: success
+
+runs:
+  using: composite
+  steps:
+    - name: Download Artifact (local)
+      if: inputs.workflow == ''
+      uses: actions/download-artifact@v3
+      with:
+        name: ${{ inputs.artifact }}
+        path: ${{ inputs.path }}
+
+    - name: Download Artifact (remote)
+      if: inputs.workflow != ''
+      uses: dawidd6/action-download-artifact@master
+      with:
+        workflow_conclusion: ${{ inputs.workflow-conclusion }}
+        workflow: ${{ inputs.workflow }}
+        name: ${{ inputs.artifact }}
+        path: ${{ inputs.path }}

@@ -1,0 +1,34 @@
+name: Find Solution
+author: Florian Bernd
+description: Generates a Visual Studio Solution Filter (.slnf) file for a solution and a list of patterns.
+
+inputs:
+  shell:
+    description: The default shell to use for this composite action.
+    type: string
+    required: false
+    default: bash
+  solution:
+    description: The Visual Studio solution file.
+    type: string
+    required: true
+  pattern:
+    description: A list of glob patterns used for filtering. Accepts multiline strings. Use '!' to negate a single pattern.
+    type: string
+    required: true
+  output:
+    description: The output filename. Should end with '.slnf'.
+    type: string
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Filter Solution
+      shell: ${{ inputs.bash }}
+      working-directory: ${{ github.workspace }}
+      run: >
+        python $WORKFLOWS_PATH/scripts/solution_filter.py
+        --pattern '${{ inputs.pattern }}'
+        --output "${{ inputs.output }}"
+        "${{ inputs.solution }}"

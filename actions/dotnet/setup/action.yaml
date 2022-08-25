@@ -1,0 +1,42 @@
+name: .NET Setup
+author: Florian Bernd
+description: Sets up the requested .NET versions.
+
+inputs:
+  shell:
+    description: The default shell to use for this composite action.
+    type: string
+    required: false
+    default: bash
+  dotnet-version:
+    description: The .NET versions to set up. Supports multi-line strings.
+    type: string
+    required: false
+    default: 6.0.x
+  disable-error-matcher:
+    description: Removes the default .NET error matcher.
+    type: boolean
+    required: false
+    default: false
+
+runs:
+  using: composite
+  steps:
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v2.1.0
+      with:
+        dotnet-version: ${{ inputs.dotnet-version }}
+
+    - name: Configure for Maximum Performance
+      shell: ${{ inputs.shell }}
+      run: |
+        echo "DOTNET_NOLOGO=1" >> $GITHUB_ENV
+        echo "DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1" >> $GITHUB_ENV
+        echo "DOTNET_CLI_TELEMETRY_OPTOUT=1" >> $GITHUB_ENV
+        echo "DOTNET_GENERATE_ASPNET_CERTIFICATE=1" >> $GITHUB_ENV
+
+    - name: Disable Error Matcher
+      if: inputs.disable-error-matcher
+      shell: ${{ inputs.shell }}
+      run: |
+        echo "::remove-matcher owner=csc::"

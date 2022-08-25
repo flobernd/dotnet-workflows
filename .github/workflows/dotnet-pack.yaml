@@ -1,26 +1,30 @@
-# Builds a specified set of project files and creates an artifact with the resulting NuGet packages.
-
-name: .NET CLI
+name: .NET Pack
 
 on:
   workflow_call:
     inputs:
-      fetch_depth:
+      fetch-depth:
         description: Number of commits to fetch. 0 indicates all history for all branches and tags.
         required: false
         type: number
         default: 1
       submodules:
-        description: 'Whether to checkout submodules: `true` to checkout submodules or `recursive` to recursively checkout submodules.'
+        description: "Whether to checkout submodules: 'true' to checkout submodules or 'recursive' to recursively checkout submodules."
         required: false
         type: string
         default: false
+
+      dotnet-version:
+        description: tbd
+        type: string
+        required: false
+        default: 6.0.x
 
       solution:
         description: The Visual Studio solution for which the packages should be build.
         required: false
         type: string
-      project_filter:
+      project-filter:
         description: A list of glob patterns used for filtering the projects. Use '!' to negate.
         required: false
         type: string
@@ -34,12 +38,12 @@ on:
         required: false
         type: string
 
-      use_nuget_cache:
+      use-nuget-cache:
         description: Specifies whether to globally cache NuGet packages.
         required: false
         type: boolean
         default: false
-      nuget_cache_key:
+      nuget-cache-key:
         description: A pattern of files to include in the NuGet cache key hash. For example '**/packages.lock.json' or '**/*.csproj'.
         required: false
         type: string
@@ -51,76 +55,59 @@ on:
         type: string
         default: nupkg
 
-env:
-  DOTNET_NOLOGO: true
-  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
-  DOTNET_CLI_TELEMETRY_OPTOUT: true
-  DOTNET_GENERATE_ASPNET_CERTIFICATE: false
-
 jobs:
   main:
     name: Pack
-    
     runs-on: ubuntu-latest
-
     env:
-      SOLUTION: ${{ inputs.project_filter != '' && format('Solution.{0}.slnf', github.run_id) || inputs.solution }}
-    
+      SOLUTION: ${{ inputs.project-filter != '' && format('Solution.{0}.slnf', github.run_id) || inputs.solution }}
     steps:
-
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
-
-      - name: Prepare Scripts
-        run: |
-          git clone https://github.com/flobernd/workflows.git ../workflows
-          pip install -r ../workflows/scripts/requirements.txt
-
       - name: Checkout
         uses: actions/checkout@v3
         with:
-          fetch-depth: ${{ inputs.fetch_depth }}
+          fetch-depth: ${{ inputs.fetch-depth }}
           submodules: ${{ inputs.submodules }}
 
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v2
-        with:
-          dotnet-version: 6.0.x
+      - name: Set up Workflows
+        uses: flobernd/workflows/actions/setup-workflows@master
 
-      - name: Cache NuGet Packages
-        if: inputs.use_nuget_cache == true
+      - name: Setup .NET
+        uses: ./.workflows/actions/dotnet/setup
+        with:
+          dotnet-version: ${{ inputs.dotnet-version }}
+
+      - name: Filter Solution
+        if: inputs.project-filter != ''
+        uses: ./.workflows/actions/dotnet/filter-solution
+        with:
+          solution: ${{ inputs.solution }}
+          pattern: ${{ inputs.project-filter }}
+          output: ${{ env.SOLUTION }}
+
+      # TODO: Replace with action
+      - name: .NET Cache Packages
+        if: inputs.use-nuget-cache == true
         uses: actions/cache@v3
         with:
           path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-${{ hashFiles(inputs.nuget_cache_key) }}
+          key: ${{ runner.os }}-nuget-${{ hashFiles(inputs.nuget-cache-key) }}
           restore-keys: ${{ runner.os }}-nuget-
 
-      - name: Generate Solution Filter
-        if: inputs.project_filter != ''
-        run: >
-          python ../workflows/scripts/solution_filter.py
-          --pattern '${{ inputs.project_filter }}'
-          --output "${{ env.SOLUTION }}"
-          "${{ inputs.solution }}"
-
+      # TODO: Add cache to restore action
       - name: .NET Restore
-        run: >
-          dotnet restore
-          "${{ env.SOLUTION }}"
+        uses: ./.workflows/actions/dotnet/restore
+        with:
+          solution: ${{ env.SOLUTION }}
 
       - name: .NET Pack
-        run: >
-          dotnet pack
-          "${{ env.SOLUTION }}"
-          --no-restore
-          --output ./nupkg
-          ${{ inputs.configuration != '' && format('--configuration "{0}"', inputs.configuration) || '' }}
-          ${{ inputs.build_args != '' && inputs.build_args || '' }}
-          -p:ContinuousIntegrationBuild=true
+        uses: ./.workflows/actions/dotnet/pack
+        with:
+          solution: ${{ env.SOLUTION }}
+          output: ./nupkg
+          configuration: ${{ inputs.configuration }}
+          extra-arguments: ${{ inputs.build_args }}
 
-      - name: Archive NuGet Artifacts
+      - name: Upload Artifact
         uses: actions/upload-artifact@v3
         with:
           name: ${{ inputs.artifact }}

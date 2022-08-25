@@ -1,0 +1,50 @@
+name: Setup Workflows
+author: Florian Bernd
+description: Sets up the Actions, Workflows and Scripts in this repository. Should be called after the checkout action.
+
+inputs:
+  shell:
+    description: The default shell to use for this composite action.
+    type: string
+    required: false
+    default: bash
+  export-workflows-path:
+    description: Whether to export the WORKFLOWS_PATH environment variable.
+    type: boolean
+    required: false
+    default: true
+
+outputs:
+  workflows-path: 
+    description: The local workflows path.
+    value: ${{ steps.setup-workflows.outputs.workflows-path }}
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Workflows
+      id: setup-workflows
+      shell: ${{ inputs.shell }}
+      run: |
+        WORKFLOWS_PATH="$GITHUB_WORKSPACE/.workflows"
+        cp -r "${{ github.action_path }}/../.." "$WORKFLOWS_PATH"
+        echo "::set-output name=workflows-path::$(echo $WORKFLOWS_PATH)"
+
+    - name: Set Environment Variable
+      if: inputs.export-workflows-path == 'true'
+      shell: ${{ inputs.shell }}
+      run: |
+        echo "WORKFLOWS_PATH=${{ steps.setup-workflows.outputs.workflows-path }}" >> $GITHUB_ENV
+
+    - name: Set up Python
+      id: setup-python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.x'
+        cache: pip
+        cache-dependency-path: ${{ steps.setup-workflows.outputs.workflows-path }}/scripts/requirements*.txt
+
+    - name: Set up Script Dependencies
+      shell: ${{ inputs.shell }}
+      run: |
+        pip install -r "${{ steps.setup-workflows.outputs.workflows-path }}/scripts/requirements.txt"

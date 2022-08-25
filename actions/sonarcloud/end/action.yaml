@@ -1,0 +1,29 @@
+name: SonarCloud End Analysis
+author: Florian Bernd
+description: Executes the 'dotnet-sonarscanner end' command.
+
+inputs:
+  shell:
+    description: The default shell to use for this composite action.
+    type: string
+    required: false
+    default: bash
+  sonar-token:
+    description: The SonarCloud token.
+    type: string
+    required: true
+  github-token:
+    description: The GitHub token.
+    type: string
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: SonarCloud End Analysis
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        SONAR_TOKEN: ${{ inputs.sonar-token }}
+      shell: ${{ inputs.shell }}
+      working-directory: ${{ github.workspace }}
+      run: ./.sonar/scanner/dotnet-sonarscanner end /d:sonar.login="$SONAR_TOKEN"

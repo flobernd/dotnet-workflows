@@ -1,18 +1,16 @@
-# Searches for a Visual Studio Solution file.
-
 name: Find Solution
 
 on: 
   workflow_call:
     inputs:
       directory:
-        description: The directory in which a Visual Studio Solution file is to be searched for.
+        description: The directory in which a Visual Studio Solution file is to be searched for (without a trailing slash).
         type: string
         required: false
 
     outputs:
       solution:
-        description: The Visual Studio Solution file or an emtpy string.
+        description: The detected Visual Studio Solution file.
         value: ${{ jobs.main.outputs.solution }}
 
 jobs:

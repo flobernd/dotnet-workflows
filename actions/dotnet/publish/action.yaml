@@ -1,0 +1,68 @@
+name: .NET Pack
+author: Florian Bernd
+description: Invokes the 'dotnet publish' CLI command.
+
+inputs:
+  shell:
+    description: The default shell to use for this composite action.
+    type: string
+    required: false
+    default: bash
+  solution:
+    description: The Visual Studio project- or solution-file.
+    type: string
+    required: true
+  output:
+    description: The output directory (without a trailing slash). Defaults to './publish'.
+    type: string
+    required: false
+    default: ./publish
+  output-format:
+    description: The publish artifact output format. Either 'directory' or 'zip'. Defaults to 'directory'.
+    type: string
+    required: false
+    default: directory
+  configuration:
+    description: The build configuration to use when building the projects.
+    type: string
+    required: false
+    default: Release
+  extra-arguments:
+    description: Extra arguments to be passed to the .NET CLI when building the projects.
+    type: string
+    required: false
+
+runs:
+  using: composite
+  steps:
+    - name: .NET Publish
+      shell: ${{ inputs.shell }}
+      run: >
+        dotnet publish
+        "${{ inputs.solution }}"
+        --no-restore
+        ${{ inputs.configuration != '' && format('--configuration "{0}"', inputs.configuration) || '' }}
+        ${{ inputs.extra-arguments }}
+        -p:ContinuousIntegrationBuild=true
+        ${{ inputs.output != '' && '-flp:"v=m;logfile=./publish.log"' || '' }}
+
+    - name: Create Publish Artifacts
+      if: inputs.output != ''
+      shell: ${{ inputs.shell }}
+      run: |
+        bash << 'EOF'
+        OUTPUT=${{ inputs.output }}
+        mkdir "$OUTPUT"
+        regex="^\s*(.+?)\s->\s(.+?publish)"
+        while IFS= read -r line
+        do
+            if [[ $line =~ $regex ]]
+            then
+                name="${BASH_REMATCH[1]}"
+                path="${BASH_REMATCH[2]}"
+                echo "${name}"
+                echo "${path}"
+                ${{ inputs.output-format == 'zip' && '(cd "$path" && zip -r - .) > "$OUTPUT/$name.zip"' || 'cp -r "$path" "$OUTPUT/$name"' }}
+            fi
+        done < "./publish.log"
+        EOF

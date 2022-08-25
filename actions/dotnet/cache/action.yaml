@@ -1,0 +1,20 @@
+name: .NET Cache Packages
+author: Florian Bernd
+description: Restores the NuGet packages for the current repository from cache.
+
+inputs:
+  hash-projects:
+    description: Specifies whether the test coverage should be written to disk (opencover format).
+    required: false
+    type: boolean
+    default: false
+
+runs:
+  using: composite
+  steps:
+    - name: .NET Cache Packages
+      uses: actions/cache@v3
+      with:
+        path: ~/.nuget/packages
+        key: ${{ runner.os }}-nuget-${{ hashFiles(inputs.nuget_cache_key) }}
+        restore-keys: ${{ runner.os }}-nuget-

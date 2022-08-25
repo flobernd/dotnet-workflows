@@ -1,0 +1,44 @@
+name: Glob Execute
+author: Florian Bernd
+description: Executes a specified command for each matching file.
+
+inputs:
+  shell:
+    description: The default shell to use for this composite action.
+    type: string
+    required: false
+    default: bash
+  pattern:
+    description: A list of glob patterns used for matching the files. Accepts multiline strings. Use '!' to negate a single pattern.
+    type: string
+    required: true
+  command:
+    description: The command to be executed for each matching file. Must contain at least one occurrence of the filename placeholder '{}'.
+    type: string
+    required: true
+  maxdop:
+    description: The maximum degree of parallelism. Pass '0' to use the number of logical CPU cores.
+    required: false
+    type: number
+    default: 0
+  fail-fast:
+    description: Immediately stop processing of subsequent files if a previous execution failed.
+    required: false
+    type: boolean
+  ignore-errors:
+    description: Ignore all execution errors and always return 'success' for the current step.
+    required: false
+    type: boolean
+
+runs:
+  using: composite
+  steps:
+    - name: Glob Execute
+      shell: ${{ inputs.shell }}
+      run: >
+        python $WORKFLOWS_PATH/scripts/glob_exec.py
+        --pattern "${{ inputs.pattern }}"
+        ${{ inputs.fail-fast == 'true' && '--fail-fast' || '' }}
+        ${{ inputs.ignore-errors != 'true' && '--ignore-errors' || '' }}
+        --maxdop=${{ inputs.maxdop }}
+        ${{ inputs.command }}

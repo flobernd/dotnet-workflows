@@ -1,0 +1,35 @@
+name: .NET Build
+author: Florian Bernd
+description: Invokes the 'dotnet build' CLI command.
+
+inputs:
+  shell:
+    description: The default shell to use for this composite action.
+    type: string
+    required: false
+    default: bash
+  solution:
+    description: The Visual Studio project- or solution-file.
+    type: string
+    required: true
+  configuration:
+    description: The build configuration to use when building the projects.
+    type: string
+    required: false
+  extra-arguments:
+    description: Extra arguments to be passed to the .NET CLI when building the projects.
+    required: false
+    type: string
+
+runs:
+  using: composite
+  steps:
+    - name: .NET Build
+      shell: ${{ inputs.shell }}
+      run: >
+        dotnet build
+        "${{ inputs.solution }}"
+        --no-restore
+        ${{ inputs.configuration != '' && format('--configuration "{0}"', inputs.configuration) || '' }}
+        ${{ inputs.extra-arguments }}
+        -p:ContinuousIntegrationBuild=true

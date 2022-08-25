@@ -6,28 +6,30 @@ name: .NET CLI
 on:
   workflow_call:
     inputs:
-      runs_on:
-        description: The machine(s) on which the job is to be executed. Supports multi line strings.
+      # Runner configuration
+      runs-on:
+        description: The runner image on which the job is to be executed.
         required: true
         type: string
 
+      # Checkout options
       fetch_depth:
         description: Number of commits to fetch. 0 indicates all history for all branches and tags.
         required: false
         type: number
         default: 1
       submodules:
-        description: 'Whether to checkout submodules: `true` to checkout submodules or `recursive` to recursively checkout submodules.'
+        description: "Whether to checkout submodules. Values: 'false', 'true', 'recursive'."
         required: false
         type: string
         default: false
 
+      # Project & build options
       dotnet_version:
-        description: The .NET versions required to run the tests. Supports multi line strings.
+        description: The .NET versions to setup on the worker. Supports multi-line strings.
         required: false
         type: string
         default: 6.0.x
-
       solution:
         description: The Visual Studio solution for which the tests should be run.
         required: true
@@ -36,8 +38,8 @@ on:
         description: A list of glob patterns used for filtering the projects. Use '!' to negate.
         required: false
         type: string
-      configuration:
-        description: The build configuration to use when building the projects.
+      build_config:
+        description: The build configuration to use.
         required: false
         type: string
         default: Debug
@@ -46,14 +48,7 @@ on:
         required: false
         type: string
 
-      test_prepare_command:
-        description: An optional command to be run right before the first test gets executed.
-        required: false
-        type: string
-      test_cleanup_command:
-        description: An optional command to be run right after the last test got executed.
-        required: false
-        type: string
+      # Test options
       test_filter:
         description: An optional filter expression to be passed to 'dotnet test'.
         required: false
@@ -68,6 +63,7 @@ on:
         type: number
         default: 0
 
+      # Cache options
       use_nuget_cache:
         description: Specifies whether to globally cache NuGet packages.
         required: false
@@ -79,8 +75,13 @@ on:
         type: string
         default: '**/packages.lock.json'
 
+      # Artifact options
+      report-suffix:
+        description: An optional name suffix for the test report.
+        required: false
+        type: string 
       archive:
-        description: "Specifies whether a 'test-results' artifact should be created. Accepted values: 'never', 'always', 'on_success', 'on_failure'."
+        description: "Specifies whether a 'test-results' artifact should be created. Values: 'never', 'always', 'on_success', 'on_failure'."
         required: false
         type: string
         default: never
@@ -88,7 +89,21 @@ on:
         description: The name of the output 'test-results' artifact.
         required: false
         type: string
-        default: test-results  
+        default: test-results
+
+      # Allows execution of custom commands prior to or after certin steps of the workflow
+      cmd_pre_build:
+        description: An optional command to be run right before the build starts.
+        required: false
+        type: string
+      cmd_pre_test:
+        description: An optional command to be run right before the first test gets executed.
+        required: false
+        type: string
+      cmd_post_test:
+        description: An optional command to be run right after the last test got executed.
+        required: false
+        type: string
 
 env:
   DOTNET_NOLOGO: true
@@ -97,30 +112,10 @@ env:
   DOTNET_GENERATE_ASPNET_CERTIFICATE: false
 
 jobs:
-  generate_matrix:
-    name: Generate Job Matrix
-    runs-on: ubuntu-latest
-    outputs:
-      matrix: ${{ steps.generate.outputs.matrix }}
-    env:
-      MATRIX_INPUT: ${{ inputs.runs_on }}
-    steps:
-      - name: Generate Job Matrix
-        id: generate
-        run: |
-          MATRIX_OUTPUT=$(node -e "console.log(JSON.stringify(process.env.MATRIX_INPUT.split(/\r?\n/).map(x => x.trim()).filter(x => x)));")
-          echo "::set-output name=matrix::$MATRIX_OUTPUT"
-
   main:
     name: Run Tests
-    needs: generate_matrix
 
-    strategy:
-      fail-fast: false
-      matrix: 
-        os: ${{ fromJSON(needs.generate_matrix.outputs.matrix) }}
-
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ inputs.runs-on }}
 
     env:
       SOLUTION: ${{ inputs.project_filter != '' && format('Solution.{0}.slnf', github.run_id) || inputs.solution }}
@@ -130,7 +125,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.10'
+          python-version: '3.x'
 
       - name: Prepare Scripts
         run: |
@@ -164,6 +159,10 @@ jobs:
           --output "${{ env.SOLUTION }}"
           "${{ inputs.solution }}"
 
+      - name: Run Pre Build Command
+        if: inputs.cmd_pre_build != ''
+        run: ${{ inputs.cmd_pre_build }}
+
       - name: .NET Restore
         run: >
           dotnet restore
@@ -174,20 +173,21 @@ jobs:
           dotnet build
           "${{ env.SOLUTION }}"
           --no-restore
-          ${{ inputs.configuration != '' && format('--configuration "{0}"', inputs.configuration) || '' }}
+          ${{ inputs.build_config != '' && format('--configuration "{0}"', inputs.build_config) || '' }}
           ${{ inputs.build_args != '' && inputs.build_args || '' }}
           -p:ContinuousIntegrationBuild=true
 
-      - name: Run Prepare Command
-        if: inputs.test_prepare_command != ''
-        run: ${{ inputs.test_prepare_command }}
+      - name: Run Pre Test Command
+        if: inputs.cmd_pre_test != ''
+        id: pre_test
+        run: ${{ inputs.cmd_pre_test }}
 
       - name: .NET Test
         id: test
         run: >
           python ../workflows/scripts/glob_exec.py
           --pattern "${{ inputs.project_filter != '' && inputs.project_filter || '**/*.csproj' }}"
-          ${{ inputs.fail_fast != '' && '--fail-fast' || '' }}
+          ${{ inputs.fail_fast == true && '--fail-fast' || '' }}
           --ignore-errors
           --maxdop=${{ inputs.maxdop }}
           dotnet test
@@ -198,15 +198,14 @@ jobs:
           --collect:"XPlat Code Coverage"
           -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=opencover
 
-      - name: Run Cleanup Command
-        if: always() && inputs.test_cleanup_command != ''
-        continue-on-error: true
-        run: ${{ inputs.test_cleanup_command }}
+      - name: Run Post Test Command
+        if: always() && steps.pre_test.outcome == 'success' && inputs.cmd_post_test != ''
+        run: ${{ inputs.cmd_post_test }}
 
       - name: Generate Test Report
-        uses: dorny/test-reporter@v1
+        uses: dorny/test-reporter@v1.5.0
         with:
-          name: Test Results (${{ matrix.os }})
+          name: Test Results${{ inputs.report-suffix != '' && format(' {0}', inputs.report-suffix) || '' }}
           path: '**/TestResults/*.trx'
           reporter: dotnet-trx
           fail-on-error: true

@@ -1,0 +1,24 @@
+name: Hash Files
+author: Florian Bernd
+description: Generates a SHA256 hash over multiple files based on a given pattern.
+
+inputs:
+  pattern:
+    description: A list of glob patterns used for matching the files. Use '!' to negate.
+    type: string
+    required: true
+
+outputs:
+  hash: 
+    description: The result hash.
+    value: ${{ steps.hash.outputs.hash }}
+
+runs:
+  using: composite
+  steps:
+    - name: Hash Files
+      id: hash
+      shell: bash
+      run: |
+        HASH=$(python $WORKFLOWS_PATH/scripts/hash_files.py '${{ inputs.pattern }}')
+        echo "::set-output name=hash::$(echo $HASH)"

@@ -1,0 +1,49 @@
+name: SonarCloud Begin Analysis
+author: Florian Bernd
+description: Executes the 'dotnet-sonarscanner begin' command.
+
+inputs:
+  shell:
+    description: The default shell to use for this composite action.
+    type: string
+    required: false
+    default: bash
+  sonar-organization:
+    description: The SonarCloud organization name.
+    type: string
+    required: true
+  sonar-project-key:
+    description: The SonarCloud project key.
+    type: string
+    required: true
+  sonar-token:
+    description: The SonarCloud token.
+    type: string
+    required: true
+  github-token:
+    description: The GitHub token.
+    type: string
+    required: true
+  extra-arguments:
+    description: Extra arguments to be passed to the 'sonarscanner' CLI tool.
+    required: false
+    type: string
+
+runs:
+  using: composite
+  steps:
+    - name: SonarCloud Begin Analysis
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        SONAR_TOKEN: ${{ inputs.sonar-token }}
+      shell: ${{ inputs.shell }}
+      working-directory: ${{ github.workspace }}
+      run: >
+        $GITHUB_WORKSPACE/.sonar/scanner/dotnet-sonarscanner begin
+        /k:"${{ inputs.sonar-project-key }}"
+        /o:"${{ inputs.sonar-organization }}"
+        /d:sonar.login="$SONAR_TOKEN"
+        /d:sonar.host.url="https://sonarcloud.io"
+        /d:sonar.cs.opencover.reportsPaths="**/TestResults/**/coverage.opencover.xml"
+        /d:sonar.cs.vstest.reportsPaths="**/TestResults/*.trx"
+        ${{ inputs.extra-arguments }}

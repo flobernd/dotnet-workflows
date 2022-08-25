@@ -1,0 +1,42 @@
+name: .NET Pack
+author: Florian Bernd
+description: Invokes the 'dotnet pack' CLI command.
+
+inputs:
+  shell:
+    description: The default shell to use for this composite action.
+    type: string
+    required: false
+    default: bash
+  solution:
+    description: The Visual Studio project- or solution-file.
+    type: string
+    required: true
+  output:
+    description: The output directory (without a trailing slash). Defaults to './nupkg'.
+    type: string
+    required: false
+    default: ./nupkg
+  configuration:
+    description: The build configuration to use when building the projects.
+    type: string
+    required: false
+    default: Release
+  extra-arguments:
+    description: Extra arguments to be passed to the .NET CLI when building the projects.
+    type: string
+    required: false
+
+runs:
+  using: composite
+  steps:
+    - name: .NET Pack
+      shell: ${{ inputs.shell }}
+      run: >
+        dotnet pack
+        "${{ inputs.solution }}"
+        --no-restore
+        ${{ inputs.output != '' && format('--output "{0}"', inputs.output) || '' }}
+        ${{ inputs.configuration != '' && format('--configuration "{0}"', inputs.configuration) || '' }}
+        ${{ inputs.extra-arguments }}
+        -p:ContinuousIntegrationBuild=true

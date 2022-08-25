@@ -10,12 +10,10 @@ import sys
 from timeit import default_timer as timer
 from wcmatch import glob
 
-parser = argparse.ArgumentParser(description='Executes the specified command for each matching file.')
+parser = argparse.ArgumentParser(description='Executes a specified command for each matching file.')
 
 parser.add_argument('--pattern', type=str,
                     help='A list of glob patterns used for matching the files. Use \'!\' to negate.', required=True)
-parser.add_argument('--exclude', type=str,
-                    help='An optional newline-separated list of glob patterns to exclude.')
 parser.add_argument('--maxdop', type=int, default=1,
                     help='The maximum degree of parallelism. Pass \'0\' to use the number of logical CPU cores.')
 parser.add_argument('--fail-fast', action='store_true',
@@ -92,7 +90,7 @@ async def execute(id, file, command, *command_args):
 
 async def execute_with_maxdop(semaphore, id, file, command, *command_args):
     async with semaphore:
-        await execute(id, file, command, *command_args)
+        return await execute(id, file, command, *command_args)
 
 
 async def gather(*tasks, **kwargs):

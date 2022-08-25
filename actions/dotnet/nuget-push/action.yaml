@@ -1,0 +1,38 @@
+name: .NET NuGet Push
+author: Florian Bernd
+description: Pushes NuGet packages to a NuGet feed.
+
+inputs:
+  shell:
+    description: The default shell to use for this composite action.
+    type: string
+    required: false
+    default: bash
+  packages:
+    description: A glob pattern used to select the packages.
+    required: true
+    type: string
+  nuget-source:
+    description: The NuGet package source.
+    required: true
+    type: string
+  nuget-api-key:
+    description: The NuGet API key.
+    required: true
+    type: string
+  skip-duplicate:
+    description: Specifies whether to skip packages that are already pushed to the feed.
+    required: false
+    type: boolean
+    default: true
+
+runs:
+  using: composite
+  steps:
+    - name: .NET NuGet Push
+      shell: ${{ inputs.shell }}
+      run: >
+        dotnet nuget push ${{ inputs.packages }}
+        --source ${{ inputs.nuget-source }}
+        --api-key ${{ inputs.nuget-api-key }}
+        ${{ inputs.skip-duplicate == 'true' && '--skip-duplicate' || '' }}

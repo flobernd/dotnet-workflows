@@ -1,0 +1,49 @@
+name: Find Solution
+author: Florian Bernd
+description: Searches for a Visual Studio Solution file.
+
+inputs:
+  shell:
+    description: The default shell to use for this composite action.
+    type: string
+    required: false
+    default: bash
+  directory:
+    description: The directory in which a Visual Studio Solution file is to be searched for (without a trailing slash).
+    type: string
+    required: false
+
+outputs:
+  solution:
+    description: The detected Visual Studio Solution file.
+    value: ${{ steps.find.outputs.solution }}
+
+runs:
+  using: composite
+  steps:
+    - name: Find Solution
+      id: find
+      shell: ${{ inputs.shell }}
+      working-directory: ${{ github.workspace }}
+      run: |
+        bash << 'EOF'
+        ${{ inputs.directory != '' && format('cd "{0}"', inputs.directory) || '' }}
+        shopt -s nullglob
+        solutions=(*.sln)
+        if [[ ${#solutions[@]} == 0 ]]
+        then
+            echo "No Visual Studio solution file found in the current directory"
+            exit 1
+        fi
+        if [[ ${#solutions[@]} > 1 ]]
+        then
+            echo "Multiple Visual Studio solution files found in the current directory"
+            exit 1
+        fi
+        echo "::set-output name=solution::${{ inputs.directory != '' && format('{0}/', inputs.directory) || '' }}${solutions[0]}"
+        EOF
+
+    - name: Print Solution Name
+      shell: ${{ inputs.bash }}
+      run: |
+        echo "Using solution '${{ steps.find.outputs.solution }}'"

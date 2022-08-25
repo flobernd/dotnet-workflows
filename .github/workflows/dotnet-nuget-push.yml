@@ -1,0 +1,50 @@
+name: .NET NuGet Push
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: The environment in which the job is to be executed.
+        type: string
+        required: false
+      nuget-source:
+        description: The destination NuGet package source.
+        type: string
+        required: true
+      nupkg-artifact:
+        description: The name of the 'nupkg' artifact to import.
+        type: string
+        required: true
+      nupkg-artifact-workflow:
+        description: The name of the workflow that generated the 'nupkg' artifact.
+        type: string
+        required: false
+    secrets:
+      NUGET_API_KEY:
+        required: true
+
+jobs:
+  main:
+    name: Push
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - name: Setup .NET
+        uses: ./.workflows/actions/dotnet/setup
+        with:
+          dotnet-version: 6.0.x
+
+      - name: Import NuGet Packages
+        uses: ./.workflows/actions/github/download-artifact
+        with:
+          artifact: ${{ inputs.nupkg-artifact }}
+          path: ./nupkg
+          workflow: ${{ inputs.nupkg-artifact-workflow }}
+          workflow-conclusion: success
+
+      - name: .NET NuGet Push
+        uses: ./.workflows/actions/dotnet/nuget-push
+        with:
+          packages: ./nupkg/*.nupkg
+          nuget-source: ${{ inputs.nuget-source }}
+          nuget-api-key: ${{ secrets.NUGET_API_KEY }}

@@ -1,0 +1,61 @@
+name: .NET Test
+author: Florian Bernd
+description: Invokes the 'dotnet test' CLI command.
+
+inputs:
+  shell:
+    description: The default shell to use for this composite action.
+    type: string
+    required: false
+    default: bash
+  projects:
+    description: A list of glob patterns used to select the test projects. Accepts multiline strings. Use '!' to negate a single pattern.
+    type: string
+    required: false
+    default: '**/*.csproj'
+  maxdop:
+    description: The maximum number of test projects to execute in parallel. Set '0' to use the number of logical CPU cores.
+    required: false
+    type: number
+    default: 0
+  filter:
+    description: An optional filter expression to be passed to 'dotnet test'.
+    required: false
+    type: string
+  fail-fast:
+    description: Immediately stop processing of subsequent tests if a previous execution failed.
+    required: false
+    type: boolean
+  fail-on-error:
+    description: Specifies whether the current job should fail if one or more tests are not completed successfully.
+    required: false
+    type: boolean
+  log-results:
+    description: Specifies whether the test results should be written to disk (trx format).
+    required: false
+    type: boolean
+    default: false
+  collect-coverage:
+    description: Specifies whether the test coverage should be written to disk (opencover format).
+    required: false
+    type: boolean
+    default: false
+
+runs:
+  using: composite
+  steps:
+    - uses: ./.workflows/actions/glob-exec
+      name: .NET Test
+      with:
+        shell: ${{ inputs.shell }}
+        pattern: ${{ inputs.projects }}
+        command: >
+          dotnet test
+          "{}"
+          --no-build
+          ${{ inputs.filter != '' && format('--filter "{0}"', inputs.filter) || '' }}
+          ${{ inputs.log-results == 'true' && format('--logger:"trx;LogFilePrefix={0}"', runner.os) || '' }}
+          ${{ inputs.collect-coverage == 'true' && '--collect:"XPlat Code Coverage" -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=opencover' || '' }}
+        maxdop: ${{ inputs.maxdop }}
+        fail-fast: ${{ inputs.fail-fast }}
+        ignore-errors: ${{ !inputs.fail-on-error }}
